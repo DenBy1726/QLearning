@@ -1,34 +1,37 @@
+import math
 import operator
 import random
-import time
-
-import math
 import numpy as np
 
-from src.util.draw_matrix import draw_matrix, update_matrix
+from src.util.draw import draw_matrix, update_matrix
 
 
-def train(matrix, state, point=(0, 0), iteration=25000, explorationConst=300):
-    (s1, s2, value) = init(point)
-    # (fig, ax) = draw_matrix(matrix, (s2, s1))
-    gamma = 0.5
+def train(matrix, state, point=(0, 0), iteration=1000, explorationConst=100):
+
+    # (fig, ax) = draw_matrix(matrix, (s2, s1), state=state)
+    gamma = 0.4
+    log = []
     for t in range(1, iteration):
-        eps = math.exp(-float(t) / explorationConst)
-        action = get_action(s1, s2, eps, matrix, state)
-        (s1, s2) = get_next_state(s1, s2, action)
-        state_index = get_index(s1, s2, matrix)
-        profit = get_profit(s1, s2, matrix)
-        if profit == -100:
-            (s1, s2, value) = init(point)
-            continue
-        else:
+        (s1, s2) = init(point)
+        value = 0
+        done = False
+        while not done:
+            eps = math.exp(-float(t) / explorationConst)
+            action = get_action(s1, s2, eps, matrix, state)
+            previous_state_index = get_index(s1, s2, matrix)
+            (prev_s1, prev_s2) = (s1, s2)
+            (s1, s2) = get_next_state(s1, s2, action)
+            state_index = get_index(s1, s2, matrix)
+            profit = get_profit(s1, s2, matrix)
+            if profit == -100 or profit == 100:
+                done = True
             value += profit
-        (index, future_best) = get_best(s1, s2, matrix, state[state_index])
-        sample = profit + gamma * future_best
-        update_weight(state, action, sample, state_index)
-
-        # update_matrix(fig, ax, matrix, (s2, s1));
-    return state
+            (index, future_best) = get_best(s1, s2, matrix, state[state_index])
+            sample = profit + gamma * future_best
+            update_weight(state, action, sample, previous_state_index)
+        log.append(value)
+        # update_matrix(fig, ax, matrix, (s2, s1), state=state, prev_point=(prev_s2, prev_s1))
+    return (state, log)
 
 
 def get_action(s1, s2, epsilon, matrix, state):
@@ -66,6 +69,7 @@ def resolve_actions(s1, s2, matrix, state):
         allowedActions = np.append(allowedActions, 2)
     if (s1 > 0):
         allowedActions = np.append(allowedActions, 3)
+    # return allowedActions
     return np.append(allowedActions, 4)
 
 
@@ -92,5 +96,17 @@ def get_profit(s1, s2, matrix):
 def init(point):
     s1 = point[1]
     s2 = point[0]
-    value = 0
-    return (s1, s2, value)
+    return (s1, s2)
+
+
+def run(matrix, state, point=(0, 0), iteration=5000):
+    (s1, s2) = init(point)
+    (fig, ax) = draw_matrix(matrix, (s2, s1), state=state)
+    for t in range(1, iteration):
+        action = get_action(s1, s2, 0, matrix, state)
+        (prev_s1, prev_s2) = (s1, s2)
+        (s1, s2) = get_next_state(s1, s2, action)
+        profit = get_profit(s1, s2, matrix)
+        if profit == -100:
+            (s1, s2) = init(point)
+        update_matrix(fig, ax, matrix, (s2, s1), state=state, prev_point=(prev_s2, prev_s1))
