@@ -95,7 +95,6 @@ def train(agent1, agent2, matrix):
 
 
 def run(matrix, agent1, agent2, iteration=5000):
-
     for t in range(1, iteration):
         actions1 = agent1.resolve_actions(matrix)
         action1 = egreedy_policy(agent1, agent2, actions1, epsilon=0)
@@ -104,5 +103,9 @@ def run(matrix, agent1, agent2, iteration=5000):
 
         agent1.do_action(action1)
         agent2.do_action(action2)
+
+        (reward1, reward2, done) = get_profit(agent1, agent2, matrix)
+        if (done):
+            return
 
         draw_matrix(matrix, agent1, agent2)
