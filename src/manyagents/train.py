@@ -1,117 +1,108 @@
 import math
-import operator
-import random
+
+import matplotlib.pyplot as plt
 import numpy as np
 
-from src.util.draw import draw_matrix, update_matrix
+from src.manyagents.agent import Agent
 
 
-def train(matrix, state, point=(0, 0), point2=(0, 1), iteration=1000, explorationConst=100):
-    # (fig, ax) = draw_matrix(matrix, (s2, s1), state=state)
-    gamma = 0.4
-    log = []
-    for t in range(1, iteration):
-        ((s11, s12), (s21, s22)) = init(point, point2)
-        value = 0
+def draw_matrix(matrix, agent1, agent2):
+    fig = plt.figure(1)
+    m_copy = np.copy(matrix)
+    m_copy[agent1.point] = -45
+    m_copy[agent2.point] = -65
+    plt.imshow(m_copy, interpolation='nearest')
+    plt.ion()
+    plt.show()
+    fig.canvas.flush_events()
+
+
+def egreedy_policy(agent1, agent2, actions, epsilon=0.1):
+    # Get a random number from a uniform distribution between 0 and 1,
+    # if the number is lower than epsilon choose a random action
+    if np.random.random() < epsilon:
+        return actions[np.random.choice(len(actions))]
+    # Else choose the action with the highest value
+    else:
+        state = agent1.q[agent1.get_index(agent2)][4:]
+        return actions[np.argmax(state[actions])]
+
+
+def get_profit(agent1, agent2, matrix):
+    agent1_profit = matrix[agent1.point]
+    agent2_profit = matrix[agent2.point]
+
+    done = False
+    if (min(agent1_profit, agent2_profit) == - 100 or max(agent1_profit, agent2_profit) == 100):
+        done = True
+    distance = abs(agent1.point[0] - agent2.point[0]) + abs(agent1.point[1] - agent2.point[1])
+    if (distance > 2):
+        done = True
+        agent1_profit -= 100
+        agent2_profit -= 100
+    if (distance == 0):
+        agent1_profit -= 1
+        agent2_profit -= 1
+    return (agent1_profit, agent2_profit, done)
+
+
+def train(agent1, agent2, matrix):
+    # Iterate over 500 episodes
+    for _ in range(1000):
+        agent1.clear_point()
+        agent2.clear_point()
         done = False
+
+        agent1.clear_profit()
+        agent2.clear_profit()
+        # agent1.q = agent2.q
+        # While episode is not over
         while not done:
-            eps = math.exp(-float(t) / explorationConst)
-            action = get_action(s11, s12, s21, s22, eps, matrix, state)
-            action = get_action(s21, s22, s11, s12, eps, matrix, state)
-            previous_state_index = get_index(s11, s12, matrix)
-            previous_state_index = get_index(s21, s22, matrix)
-            (prev_s11, prev_s12, prev_s21, prev_s22) = (s11, s12, s21, s22)
+            eps = math.exp(-float(_) / 100)
+            # Choose action
+            actions1 = agent1.resolve_actions(matrix)
+            action1 = egreedy_policy(agent1, agent2, actions1, epsilon=eps)
+            actions2 = agent2.resolve_actions2(matrix, action1, agent1)
+            action2 = egreedy_policy(agent2, agent1, actions2, epsilon=eps)
 
-            (s11, s12) = get_next_state(s11, s12, action)
-            (s21, s22) = get_next_state(s21, s22, action)
+            agent1.do_action(action1)
+            agent2.do_action(action2)
 
-            state_index = get_index(s11, s12, matrix)
-            state_index2 = get_index(s21, s22, matrix)
+            (reward1, reward2, done) = get_profit(agent1, agent2, matrix)
 
-            profit = get_profit(s11, s12, matrix)
-            if profit == -100 or profit == 100:
-                done = True
-            value += profit
-            (index, future_best) = get_best(s11, s12, matrix, state[state_index])
-            sample = profit + gamma * future_best
-            update_weight(state, action, sample, previous_state_index)
-        log.append(value)
-        # update_matrix(fig, ax, matrix, (s2, s1), state=state, prev_point=(prev_s2, prev_s1))
-    return (state, log)
+            agent1.update_profit(reward1)
+            agent2.update_profit(reward2)
+            if (done == True):
+                print(str(_) + ":" + str(agent1.mean_profit(agent2)))
 
+            (index1, index2) = (agent1.get_index(agent2), agent2.get_index(agent1))
+            (prev_index1, prev_index2) = (agent1.get_prev_index(agent2), agent2.get_prev_index(agent1))
 
-def get_action(s11, s12, s21, s22, epsilon, matrix, state):
-    actions = resolve_actions(s11, s12, matrix, state)
-    randVal = random.random()
-    if (randVal < epsilon):
-        return actions[np.random.randint(0, len(actions), 1)[0]]
-    index = get_index(s11, s12, matrix)
-    index2 = get_index(s21, s22, matrix)
-    index, value = get_best_by_actions(state[index][index2], actions)
-    return index
+            td_target1 = reward1 + 0.33 * np.max(agent1.q[index1])
+            td_target2 = reward2 + 0.33 * np.max(agent2.q[index2])
 
+            td_error1 = td_target1 - agent1.q[prev_index1][action1 + 4]
+            td_error2 = td_target2 - agent2.q[prev_index2][action2 + 4]
 
-def update_weight(state, current_action, sample, index):
-    alpha = 0.5
-    state[index, current_action] = state[index, current_action] + alpha * (
-            sample - state[index, current_action])
+            agent1.q[prev_index1][action1 + 4] += 0.65 * td_error1
+            agent2.q[prev_index2][action2 + 4] += 0.65 * td_error2
+
+            # agent2.q[prev_index1][action1 + 4] += 0.5 * td_error1
+            # agent1.q[prev_index2][action2 + 4] += 0.5 * td_error2
+
+            if (_ % 500 == 0):
+                draw_matrix(matrix, agent1, agent2)
 
 
-def get_best_by_actions(state, actions):
-    return max([(actions[i], x) for i, x in enumerate(np.array(state)[actions])], key=operator.itemgetter(1))
+def run(matrix, agent1, agent2, iteration=5000):
 
-
-def get_best(s1, s2, matrix, state):
-    actions = resolve_actions(s1, s2, matrix, state)
-    return get_best_by_actions(state, actions)
-
-
-def resolve_actions(s1, s2, matrix, state):
-    allowedActions = np.array([], dtype=int)
-    if (s2 > 0):
-        allowedActions = np.append(allowedActions, 0)
-    if (s1 < matrix.shape[1] - 1):
-        allowedActions = np.append(allowedActions, 1)
-    if (s2 < matrix.shape[0] - 1):
-        allowedActions = np.append(allowedActions, 2)
-    if (s1 > 0):
-        allowedActions = np.append(allowedActions, 3)
-    # return allowedActions
-    return np.append(allowedActions, 4)
-
-
-def get_next_state(s1, s2, action):
-    if (action == 0):
-        return (s1, s2 - 1)
-    if (action == 1):
-        return (s1 + 1, s2)
-    if (action == 2):
-        return (s1, s2 + 1)
-    if (action == 3):
-        return (s1 - 1, s2)
-    return (s1, s2)
-
-
-def get_index(s1, s2, matrix):
-    return s1 * matrix.shape[0] + s2
-
-
-def get_profit(s1, s2, matrix):
-    return matrix[s2, s1]
-
-
-def init(point, point1):
-    return ((point[1], point[0]), (point1[1], point1[0]))
-
-
-def run(matrix, state, point=(0, 0), iteration=5000):
-    (s1, s2) = init(point)
-    (fig, ax) = draw_matrix(matrix, (s2, s1), state=state)
     for t in range(1, iteration):
-        action = get_action(s1, s2, 0, matrix, state)
-        (prev_s1, prev_s2) = (s1, s2)
-        (s1, s2) = get_next_state(s1, s2, action)
-        profit = get_profit(s1, s2, matrix)
-        if profit == -100:
-            (s1, s2) = init(point)
-        update_matrix(fig, ax, matrix, (s2, s1), state=state, prev_point=(prev_s2, prev_s1))
+        actions1 = agent1.resolve_actions(matrix)
+        action1 = egreedy_policy(agent1, agent2, actions1, epsilon=0)
+        actions2 = agent2.resolve_actions2(matrix, action1, agent1)
+        action2 = egreedy_policy(agent2, agent1, actions2, epsilon=0)
+
+        agent1.do_action(action1)
+        agent2.do_action(action2)
+
+        draw_matrix(matrix, agent1, agent2)
